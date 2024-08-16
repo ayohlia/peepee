@@ -1,22 +1,40 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:statusbarmanager/statusbarmanager.dart';
 
 void main() {
-  runApp(const PeePee());
+  runApp(const PeePeeBar());
+}
+
+class PeePeeBar extends StatelessWidget {
+  const PeePeeBar({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return StatusBarManager(
+      translucent: false,
+      statusBarColor: const Color(0xFF8B5A2B),
+      navigationBarColor: const Color(0xFF8B5A2B),
+      navigationBarDividerColor: const Color(0xFFF5F5DC),
+      statusBarBrightness: Brightness.light,
+      statusBarIconBrightness: Brightness.light,
+      navigationBarBrightness: Brightness.light,
+      child: const PeePee(),
+    );
+  }
 }
 
 class PeePee extends StatelessWidget {
   const PeePee({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Pee-Pee',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFFFBF00)),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFE1C16E)),
         useMaterial3: true,
       ),
       home: const HomePage(title: 'Pee-Pee'),
