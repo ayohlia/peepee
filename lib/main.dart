@@ -16,7 +16,7 @@ class PeePee extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Pee-Pee',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFF5F5DC)),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFFFBF00)),
         useMaterial3: true,
       ),
       home: const HomePage(title: 'Pee-Pee'),
@@ -36,10 +36,12 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Center(child: Text(widget.title)),
-      ),
-      body: Stack(
+          centerTitle: true,
+          shadowColor: Theme.of(context).colorScheme.onPrimaryContainer,
+          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+          title: Text(widget.title)),
+      body: SafeArea(
+          child: Stack(
         children: [
           FlutterMap(
             options: const MapOptions(
@@ -56,7 +58,7 @@ class _HomePageState extends State<HomePage> {
             ],
           )
         ],
-      ),
+      )),
       floatingActionButton: FloatingActionButton(
         onPressed: () => {},
         tooltip: 'Filter',
