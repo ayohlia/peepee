@@ -31,6 +31,12 @@ class MapView extends StatefulWidget {
 class _MapViewState extends State<MapView> {
   late GeolocatorService _geolocation;
   final UtilisateurModel _utilisateur = UtilisateurModel();
+  final _mapController = MapController();
+
+  @override
+  initState() {
+    super.initState();
+  }
 
   @override
   void didChangeDependencies() {
@@ -68,14 +74,16 @@ class _MapViewState extends State<MapView> {
                     child: Stack(
                   children: [
                     FlutterMap(
-                      options: const MapOptions(
+                      mapController: _mapController,
+                      options: MapOptions(
                         initialCenter: LatLng(
-                            46.813744, 1.693057), // Center the map over London
+                            _utilisateur.latitude!,
+                            _utilisateur
+                                .longitude!), // Center the map over London
                         initialZoom: 15,
                       ),
                       children: [
                         TileLayer(
-                          // Display map tiles from any source
                           urlTemplate:
                               'https://tile.openstreetmap.org/{z}/{x}/{y}.png', // OSMF's Tile Server
                         ),
