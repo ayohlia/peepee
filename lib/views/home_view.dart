@@ -85,7 +85,7 @@ class _MapViewState extends State<MapView> {
                       children: [
                         TileLayer(
                           urlTemplate:
-                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png', // OSMF's Tile Server
+                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                         ),
                       ],
                     )
