@@ -8,7 +8,6 @@ import '../services/geolocator_service.dart';
 
 class HomeView extends StatefulWidget {
   const HomeView({super.key});
-
   @override
   State<HomeView> createState() => _HomeViewState();
 }
@@ -25,7 +24,6 @@ class _HomeViewState extends State<HomeView> {
 
 class MapView extends StatefulWidget {
   const MapView({super.key});
-
   @override
   State<MapView> createState() => _MapViewState();
 }
@@ -66,7 +64,6 @@ class _MapViewState extends State<MapView> {
                 if (snapshotPermission!.data) {
                   return const Text('Impossible de vous localiser !');
                 }
-
                 return SafeArea(
                     child: Stack(
                   children: [

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:peepee/permission_check.dart';
 
 import 'locator.dart';
 import 'views/home_view.dart';
@@ -57,6 +58,6 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
         appBar: AppBar(centerTitle: true, title: Text(widget.title)),
-        body: const HomeView());
+        body: const PermissionCheck());
   }
 }
