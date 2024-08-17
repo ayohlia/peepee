@@ -17,9 +17,10 @@ class PeePee extends StatelessWidget {
   PeePee({super.key});
   final String _appTitle = 'Pee-Pee';
   final _colorScheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFFF5F5DC),
+      seedColor: const Color(0xFF35CAC6),
       brightness: Brightness.light,
-      primary: const Color(0xFFE1C16E));
+      primary: const Color(0xFF098EAF),
+      secondary: const Color(0xFFA4CBC9));
 
   @override
   Widget build(BuildContext context) {
