@@ -40,8 +40,8 @@ class _MapViewState extends State<MapView> {
 
   @override
   void didChangeDependencies() {
-    _geolocation = Provider.of<GeolocatorService>(context);
     super.didChangeDependencies();
+    _geolocation = Provider.of<GeolocatorService>(context);
   }
 
   // ????????
