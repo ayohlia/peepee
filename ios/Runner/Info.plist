@@ -47,5 +47,11 @@
 		<true/>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<key>NSLocationWhenInUseUsageDescription</key>
+		<string>Nous utilisons votre localisation pour améliorer votre expérience.</string>
+		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+		<string>Nous utilisons votre localisation même en arrière-plan pour fournir des services de localisation continus.</string>
+		<key>NSLocationAlwaysUsageDescription</key>
+		<string>Nous avons besoin de votre localisation en permanence pour une meilleure expérience utilisateur.</string>
 	</dict>
 </plist>
