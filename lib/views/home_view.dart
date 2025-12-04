@@ -28,15 +28,13 @@ class MapView extends StatefulWidget {
   State<MapView> createState() => _MapViewState();
 }
 
-class _MapViewState extends State<MapView> {
+class _MapViewState extends State<MapView>
+    with AutomaticKeepAliveClientMixin<MapView> {
   late GeolocatorService _geolocation;
   final UtilisateurModel _utilisateur = UtilisateurModel();
   final _mapController = MapController();
 
-  @override
-  initState() {
-    super.initState();
-  }
+  // initState not required (no extra initialization)
 
   @override
   void didChangeDependencies() {
@@ -44,20 +42,21 @@ class _MapViewState extends State<MapView> {
     _geolocation = Provider.of<GeolocatorService>(context);
   }
 
-  // ????????
+  @override
   bool get wantKeepAlive => true;
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder(
+    super.build(context);
+    return StreamBuilder<UtilisateurModel>(
         stream: _geolocation.location,
-        builder: <UtilisateurModel>(context, snapshotLocation) {
-          return StreamBuilder(
+        builder: (context, AsyncSnapshot<UtilisateurModel> snapshotLocation) {
+          return StreamBuilder<bool>(
               stream: _geolocation.permissionAskLocation,
-              builder: <bool>(context, snapshotPermission) {
+              builder: (context, AsyncSnapshot<bool> snapshotPermission) {
                 if (snapshotLocation.hasData && snapshotPermission.hasData) {
-                  _utilisateur.latitude = snapshotLocation.data.latitude;
-                  _utilisateur.longitude = snapshotLocation.data.longitude;
+                  _utilisateur.latitude = snapshotLocation.data?.latitude;
+                  _utilisateur.longitude = snapshotLocation.data?.longitude;
                 }
 
                 if (snapshotLocation.connectionState ==
@@ -67,7 +66,7 @@ class _MapViewState extends State<MapView> {
                   return const Text("Chargement des données.");
                 }
 
-                if (snapshotPermission!.data) {
+                if (snapshotPermission.data == true) {
                   return const Text('Impossible de vous localiser !');
                 }
                 return SafeArea(
@@ -76,10 +75,8 @@ class _MapViewState extends State<MapView> {
                     FlutterMap(
                       mapController: _mapController,
                       options: MapOptions(
-                        initialCenter: LatLng(
-                            _utilisateur.latitude!,
-                            _utilisateur
-                                .longitude!), // Center the map over London
+                        initialCenter: LatLng(_utilisateur.latitude ?? 0.0,
+                            _utilisateur.longitude ?? 0.0),
                         initialZoom: 15,
                       ),
                       children: [

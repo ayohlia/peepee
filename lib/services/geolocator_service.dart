@@ -4,8 +4,8 @@ import 'package:geolocator/geolocator.dart';
 import '../models/utilisateur_model.dart';
 
 class GeolocatorService {
-  late UtilisateurModel _currentLocation;
-  late bool _permissionDenied = false;
+  UtilisateurModel? _currentLocation;
+  // permission state is emitted via _permissionsController
 
   final StreamController<UtilisateurModel> _locationController =
       StreamController<UtilisateurModel>.broadcast();
@@ -13,37 +13,61 @@ class GeolocatorService {
       StreamController<bool>.broadcast();
 
   GeolocatorService() {
-    Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best)
-        .then((locationData) {
+    _init();
+  }
+
+  Future<void> _init() async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        _permissionsController.add(true);
+        return;
+      }
+
+      const settings = LocationSettings(accuracy: LocationAccuracy.best);
+      final pos =
+          await Geolocator.getCurrentPosition(locationSettings: settings)
+              .timeout(const Duration(seconds: 10));
+
       _permissionsController.add(false);
-      _locationController.add(UtilisateurModel(
-          latitude: locationData.latitude, longitude: locationData.longitude));
-    }).onError((error, stackTrace) {
-      _permissionDenied = true;
-      _permissionsController.add(_permissionDenied);
-    }).timeout(const Duration(seconds: 10), onTimeout: () {
-      _permissionDenied = true;
-      _permissionsController.add(_permissionDenied);
-    });
+      _currentLocation =
+          UtilisateurModel(latitude: pos.latitude, longitude: pos.longitude);
+      _locationController.add(_currentLocation!);
+    } catch (e) {
+      _permissionsController.add(true);
+    }
   }
 
   Stream<bool> get permissionAskLocation => _permissionsController.stream;
   Stream<UtilisateurModel> get location => _locationController.stream;
 
-  Future<UtilisateurModel> getLocation() async {
+  Future<UtilisateurModel?> getLocation() async {
     try {
-      final userLocation = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.best);
+      const settings = LocationSettings(accuracy: LocationAccuracy.best);
+      final userLocation =
+          await Geolocator.getCurrentPosition(locationSettings: settings);
       _currentLocation = UtilisateurModel(
         latitude: userLocation.latitude,
         longitude: userLocation.longitude,
       );
-    } on Exception {
+    } catch (_) {
       final userLocation = await Geolocator.getLastKnownPosition();
-      _currentLocation = UtilisateurModel(
-          latitude: userLocation!.latitude, longitude: userLocation.longitude);
-      //print('Ne peut pas trouver la position: ${e.toString()}');
+      if (userLocation != null) {
+        _currentLocation = UtilisateurModel(
+            latitude: userLocation.latitude, longitude: userLocation.longitude);
+      }
     }
     return _currentLocation;
+  }
+
+  void dispose() {
+    _locationController.close();
+    _permissionsController.close();
   }
 }
