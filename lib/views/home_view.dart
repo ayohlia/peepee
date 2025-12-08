@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/utilisateur_model.dart';
 import '../services/geolocator_service.dart';
 
 class HomeView extends StatefulWidget {
-  const HomeView({super.key});
+  const HomeView({super.key, this.title = 'PeePee'});
+  final String title;
+
   @override
   State<HomeView> createState() => _HomeViewState();
 }
@@ -15,9 +16,17 @@ class HomeView extends StatefulWidget {
 class _HomeViewState extends State<HomeView> {
   @override
   Widget build(BuildContext context) {
-    return Provider<GeolocatorService>(
-      create: (context) => GeolocatorService(),
-      child: const MapView(),
+    return Scaffold(
+      appBar: AppBar(
+        centerTitle: true,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        title:
+            Text(widget.title, style: Theme.of(context).textTheme.displayLarge),
+      ),
+      body: Provider<GeolocatorService>(
+        create: (context) => GeolocatorService(),
+        child: const MapView(),
+      ),
     );
   }
 }
@@ -32,9 +41,6 @@ class _MapViewState extends State<MapView>
     with AutomaticKeepAliveClientMixin<MapView> {
   late GeolocatorService _geolocation;
   final UtilisateurModel _utilisateur = UtilisateurModel();
-  final _mapController = MapController();
-
-  // initState not required (no extra initialization)
 
   @override
   void didChangeDependencies() {
@@ -60,33 +66,27 @@ class _MapViewState extends State<MapView>
                 }
 
                 if (snapshotLocation.connectionState ==
-                        ConnectionState.waiting &&
+                        ConnectionState.waiting ||
                     snapshotPermission.connectionState ==
                         ConnectionState.waiting) {
-                  return const Text("Chargement des données.");
+                  return const Center(child: CircularProgressIndicator());
                 }
 
                 if (snapshotPermission.data == true) {
-                  return const Text('Impossible de vous localiser !');
+                  return const Center(
+                      child: Text('Impossible de vous localiser !'));
                 }
                 return SafeArea(
-                    child: Stack(
-                  children: [
-                    FlutterMap(
-                      mapController: _mapController,
-                      options: MapOptions(
-                        initialCenter: LatLng(_utilisateur.latitude ?? 0.0,
-                            _utilisateur.longitude ?? 0.0),
-                        initialZoom: 15,
-                      ),
-                      children: [
-                        TileLayer(
-                          urlTemplate:
-                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        ),
-                      ],
-                    )
-                  ],
+                    child: MaplibreMap(
+                  onMapCreated: (controller) {},
+                  styleString: "https://demotiles.maplibre.org/style.json",
+                  initialCameraPosition: CameraPosition(
+                    target: LatLng(_utilisateur.latitude ?? 50.63,
+                        _utilisateur.longitude ?? 3.05),
+                    zoom: 15,
+                  ),
+                  myLocationEnabled: true,
+                  myLocationTrackingMode: MyLocationTrackingMode.tracking,
                 ));
               });
         });
