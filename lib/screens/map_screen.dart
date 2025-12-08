@@ -84,6 +84,21 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> _initializeMapSources() async {
     if (_mapController == null) return;
+
+    // Defensively remove existing layers and sources to prevent crashes on hot restart
+    try {
+      await _mapController!.removeLayer(_userLocationLayerId);
+      await _mapController!.removeSource(_userLocationSourceId);
+    } catch (_) {
+      // Ignore if they don't exist
+    }
+    try {
+      await _mapController!.removeLayer(_toiletsLayerId);
+      await _mapController!.removeSource(_toiletsSourceId);
+    } catch (_) {
+      // Ignore if they don't exist
+    }
+
     // Add user location source and layer
     await _mapController!.addSource(
       _userLocationSourceId,
@@ -95,12 +110,11 @@ class _MapScreenState extends State<MapScreen> {
     await _mapController!.addLayer(
         _userLocationSourceId,
         _userLocationLayerId,
-        const CircleLayerProperties(
-          circleColor: '#FF9800',
-          circleRadius: 10,
-          circleStrokeColor: '#FFFFFF',
-          circleStrokeWidth: 2,
-          circlePitchAlignment: 'map',
+        const SymbolLayerProperties(
+          iconImage: 'urgent-user-pin',
+          iconSize: 0.5,
+          iconAllowOverlap: true,
+          iconIgnorePlacement: true,
         ));
 
     // Add toilets source and layer
@@ -128,6 +142,10 @@ class _MapScreenState extends State<MapScreen> {
         await rootBundle.load('assets/images/toiletPin.png');
     final Uint8List bytes = byteData.buffer.asUint8List();
     await _mapController!.addImage('toilet-pin', bytes);
+    final urgentBytes = (await rootBundle.load('assets/images/urgentPin.png'))
+        .buffer
+        .asUint8List();
+    await _mapController!.addImage('urgent-user-pin', urgentBytes);
   }
 
   Future<void> _updateUserLocationMarker() async {
