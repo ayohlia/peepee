@@ -22,9 +22,13 @@ class _MapScreenState extends State<MapScreen> {
   static const double _initialPitch = 60.0;
   static const _userLocationSourceId = 'user-location-source';
   static const _userLocationLayerId = 'user-location-layer';
+  static const _toiletsSourceId = 'toilets-source';
+  static const _toiletsLayerId = 'toilets-layer';
 
   MaplibreMapController? _mapController;
   bool _styleLoaded = false;
+  bool _isUpdatingSources = false; // Lock flag
+  bool _sourcesAdded = false;
 
   @override
   void initState() {
@@ -45,9 +49,21 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _onAppStateUpdated() {
-    if (_styleLoaded) {
-      _addToiletMarkers();
-      _updateUserLocationMarker();
+    if (_styleLoaded && _sourcesAdded) {
+      _updateSources();
+    }
+  }
+
+  Future<void> _updateSources() async {
+    if (_isUpdatingSources || _mapController == null) return;
+
+    _isUpdatingSources = true;
+    try {
+      // Run updates sequentially to avoid race conditions.
+      await _addToiletMarkers();
+      await _updateUserLocationMarker();
+    } finally {
+      _isUpdatingSources = false;
     }
   }
 
@@ -59,8 +75,51 @@ class _MapScreenState extends State<MapScreen> {
     _styleLoaded = true;
     if (_mapController == null) return;
     await _addImages();
-    await _setupUserLocationLayer();
-    _onAppStateUpdated(); // Appel initial pour les marqueurs
+    if (!_sourcesAdded) {
+      await _initializeMapSources();
+      _sourcesAdded = true;
+    }
+    _onAppStateUpdated(); // Initial call to load data
+  }
+
+  Future<void> _initializeMapSources() async {
+    if (_mapController == null) return;
+    // Add user location source and layer
+    await _mapController!.addSource(
+      _userLocationSourceId,
+      const GeojsonSourceProperties(data: {
+        'type': 'FeatureCollection',
+        'features': [],
+      }),
+    );
+    await _mapController!.addLayer(
+        _userLocationSourceId,
+        _userLocationLayerId,
+        const CircleLayerProperties(
+          circleColor: '#FF9800',
+          circleRadius: 10,
+          circleStrokeColor: '#FFFFFF',
+          circleStrokeWidth: 2,
+          circlePitchAlignment: 'map',
+        ));
+
+    // Add toilets source and layer
+    await _mapController!.addSource(
+      _toiletsSourceId,
+      const GeojsonSourceProperties(data: {
+        'type': 'FeatureCollection',
+        'features': [],
+      }),
+    );
+    await _mapController!.addLayer(
+      _toiletsSourceId,
+      _toiletsLayerId,
+      const SymbolLayerProperties(
+        iconImage: 'toilet-pin',
+        iconSize: 0.5,
+        iconAllowOverlap: true,
+      ),
+    );
   }
 
   Future<void> _addImages() async {
@@ -69,27 +128,6 @@ class _MapScreenState extends State<MapScreen> {
         await rootBundle.load('assets/images/toiletPin.png');
     final Uint8List bytes = byteData.buffer.asUint8List();
     await _mapController!.addImage('toilet-pin', bytes);
-  }
-
-  Future<void> _setupUserLocationLayer() async {
-    if (_mapController == null) return;
-    // Ajoute une source pour la position de l'utilisateur avec des données initiales vides
-    await _mapController!.addSource(
-        _userLocationSourceId,
-        const GeojsonSourceProperties(
-            data: {'type': 'FeatureCollection', 'features': []}));
-
-    // Ajoute une couche de cercle pour afficher la position
-    await _mapController!.addLayer(
-        _userLocationSourceId,
-        _userLocationLayerId,
-        const CircleLayerProperties(
-          circleColor: '#FF9800', // Couleur orange
-          circleRadius: 10,
-          circleStrokeColor: '#FFFFFF',
-          circleStrokeWidth: 2,
-          circlePitchAlignment: 'map',
-        ));
   }
 
   Future<void> _updateUserLocationMarker() async {
@@ -111,23 +149,31 @@ class _MapScreenState extends State<MapScreen> {
         ]
       };
 
-      // Met à jour la source de données GeoJSON
       await _mapController!.setGeoJsonSource(_userLocationSourceId, geojson);
     }
   }
 
   Future<void> _addToiletMarkers() async {
     if (_mapController == null) return;
-    await _mapController!.clearSymbols();
     final appState = Provider.of<AppState>(context, listen: false);
 
-    for (final toilet in appState.nearbyToilets) {
-      await _mapController!.addSymbol(SymbolOptions(
-        geometry: toilet,
-        iconImage: 'toilet-pin',
-        iconSize: 0.5,
-      ));
-    }
+    final features = appState.nearbyToilets.map((toilet) {
+      return {
+        'type': 'Feature',
+        'geometry': {
+          'type': 'Point',
+          'coordinates': [toilet.longitude, toilet.latitude],
+        },
+        'properties': {},
+      };
+    }).toList();
+
+    final geojson = {
+      'type': 'FeatureCollection',
+      'features': features,
+    };
+
+    await _mapController!.setGeoJsonSource(_toiletsSourceId, geojson);
   }
 
   void _recenterMap() {
