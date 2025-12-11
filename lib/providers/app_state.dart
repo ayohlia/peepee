@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:peepee/service_locator.dart';
 
 import '../errors/app_exception.dart';
 import '../models/toilet_model.dart';
@@ -16,9 +17,9 @@ class AppState with ChangeNotifier {
   String? _errorMessage;
   StreamSubscription<Position>? _positionStreamSubscription;
 
-  final LocationService _locationService = LocationService();
-  final ConnectivityService _connectivityService = ConnectivityService();
-  final ToiletsService _toiletsService = ToiletsService();
+  final LocationService _locationService = getIt<LocationService>();
+  final ConnectivityService _connectivityService = getIt<ConnectivityService>();
+  final ToiletsService _toiletsService = getIt<ToiletsService>();
 
   Position? get currentLocation => _currentLocation;
   bool get hasInternet => _hasInternet;
@@ -79,7 +80,8 @@ class AppState with ChangeNotifier {
         startLocationUpdates(); // Start streaming after the first location is fetched
       }
       notifyListeners(); // Notify listeners once after initial setup
-    } catch (e) {
+    }
+    catch (e) {
       if (kDebugMode) {
         print('Erreur lors de la mise à jour de la localisation: $e');
       }
@@ -114,4 +116,3 @@ class AppState with ChangeNotifier {
     }
   }
 }
-

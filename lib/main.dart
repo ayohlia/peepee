@@ -5,9 +5,11 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'assets/app_theme.dart';
 import 'providers/app_state.dart';
+import 'service_locator.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  setupServiceLocator(); // Initialize the service locator
   WakelockPlus.enable();
   runApp(ChangeNotifierProvider(
       create: (context) => AppState(), child: const PeePee()));

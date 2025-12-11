@@ -1,80 +1,67 @@
 name: peepee
 description: "Un petit pipi, une grande délivrance !"
-# The following line prevents the package from being accidentally published to
-# pub.dev using `flutter pub publish`. This is preferred for private packages.
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
-
-# The following defines the version and build number for your application.
-# A version number is three numbers separated by dots, like 1.2.43
-# followed by an optional build number separated by a +.
-# Both the version and the builder number may be overridden in flutter
-# build by specifying --build-name and --build-number, respectively.
-# In Android, build-name is used as versionName while build-number used as versionCode.
-# Read more about Android versioning at https://developer.android.com/studio/publish/versioning
-# In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
-# Read more about iOS versioning at
-# https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
-# In Windows, build-name is used as the major, minor, and patch parts
-# of the product and file versions while build-number is used as the build suffix.
+publish_to: 'none'
 version: 1.0.0+3
 
 environment:
-  sdk: ^3.5.3
+  sdk: '>=3.5.3 <4.0.0'
 
-# Dependencies specify other packages that your package needs in order to work.
-# To automatically upgrade your package dependencies to the latest versions
-# consider running `flutter pub upgrade --major-versions`. Alternatively,
-# dependencies can be manually updated by changing the version numbers below to
-# the latest version available on pub.dev. To see which dependencies have newer
-# versions available, run `flutter pub outdated`.
 dependencies:
   flutter:
     sdk: flutter
+
+  # UI
   cupertino_icons: ^1.0.8
-  
-  wakelock_plus: ^1.2.8
-  maplibre_gl: ^0.24.1
+
+  # State Management
+  provider: ^6.1.2
   get_it: ^8.0.0
 
-  provider: ^6.1.2
-  
+  # Map
+  maplibre_gl: ^0.24.1
+
+  # Device & System
+  wakelock_plus: ^1.2.8
   connectivity_plus: ^6.0.5
   geolocator: ^13.0.1
-  dio: ^5.6.0
   url_launcher: ^6.3.0
-
   
+  # Networking
+  dio: ^5.6.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
+  
+  # Code quality & analysis
   flutter_lints: ^4.0.0
 
+  # App assets generation
   flutter_launcher_icons: ^0.13.1
   flutter_native_splash: ^2.4.1
 
+# Configuration for the native splash screen
 flutter_native_splash:
   color: "#A5CCCA"
   image: assets/images/splashPeePee.png
-
   android_12:
     image: assets/images/splashPeePee.png
     icon_background_color: "#A5CCCA"
-    
   web: false
 
-flutter_icons:
+# Configuration for the launcher icon
+flutter_launcher_icons:
   android: true
   ios: true
   image_path: "assets/icons/IconPeePee.png"
+  remove_alpha_channel_ios: true
 
 flutter:
-
   uses-material-design: true
 
   assets:
-     - assets/images/toiletPin.png
-     - assets/images/urgentPin.png 
+    - assets/images/toiletPin.png
+    - assets/images/urgentPin.png
 
   fonts:
     - family: FredokaOne
@@ -85,4 +72,4 @@ flutter:
         - asset: assets/fonts/Roboto-Regular.ttf
         - asset: assets/fonts/Roboto-Bold.ttf
           weight: 700
-  
+
