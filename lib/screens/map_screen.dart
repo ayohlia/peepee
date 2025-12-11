@@ -64,7 +64,10 @@ class _MapScreenState extends State<MapScreen> {
 
     _isUpdatingSources = true;
     try {
-      // Only update user location marker as it's the one changing frequently
+      // Délai de synchronisation
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      // Update user location marker
       await _updateUserLocationMarker();
 
       // Add toilet markers only once
@@ -93,7 +96,7 @@ class _MapScreenState extends State<MapScreen> {
 
     final toiletId = properties['id'];
     final appState = Provider.of<AppState>(context, listen: false);
-    
+
     try {
       final toilet = appState.nearbyToilets.firstWhere((t) => t.id == toiletId);
       _showToiletDetails(toilet);
@@ -116,12 +119,59 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _initializeMapSources() async {
     if (_mapController == null) return;
 
-    // Simplified source initialization
+    // Source pour l'utilisateur
     await _mapController!.addSource(
       _userLocationSourceId,
-      const GeojsonSourceProperties(data: {'type': 'FeatureCollection', 'features': []}),
+      const GeojsonSourceProperties(
+          data: {'type': 'FeatureCollection', 'features': []}),
     );
 
+    // Halo utilisateur - Couche 1
+    await _mapController!.addLayer(
+      _userLocationSourceId,
+      'user-pulse-layer-1',
+      const CircleLayerProperties(
+        circleColor: '#FFA500',
+        circleRadius: 12.0,
+        circleOpacity: 0.6,
+        circleBlur: 0.5,
+        circlePitchAlignment: 'map',
+        circlePitchScale: 'viewport',
+        circleStrokeWidth: 0.0,
+      ),
+    );
+
+    // Halo utilisateur - Couche 2
+    await _mapController!.addLayer(
+      _userLocationSourceId,
+      'user-pulse-layer-2',
+      const CircleLayerProperties(
+        circleColor: '#FFA500',
+        circleRadius: 18.0,
+        circleOpacity: 0.35,
+        circleBlur: 0.8,
+        circlePitchAlignment: 'map',
+        circlePitchScale: 'viewport',
+        circleStrokeWidth: 0.0,
+      ),
+    );
+
+    // Halo utilisateur - Couche 3
+    await _mapController!.addLayer(
+      _userLocationSourceId,
+      'user-pulse-layer-3',
+      const CircleLayerProperties(
+        circleColor: '#FFA500',
+        circleRadius: 24.0,
+        circleOpacity: 0.15,
+        circleBlur: 1.0,
+        circlePitchAlignment: 'map',
+        circlePitchScale: 'viewport',
+        circleStrokeWidth: 0.0,
+      ),
+    );
+
+    // Pin utilisateur
     await _mapController!.addLayer(
       _userLocationSourceId,
       _userLocationLayerId,
@@ -134,11 +184,14 @@ class _MapScreenState extends State<MapScreen> {
       ),
     );
 
+    // Source pour les toilettes
     await _mapController!.addSource(
       _toiletsSourceId,
-      const GeojsonSourceProperties(data: {'type': 'FeatureCollection', 'features': []}),
+      const GeojsonSourceProperties(
+          data: {'type': 'FeatureCollection', 'features': []}),
     );
 
+    // Pin des toilettes
     await _mapController!.addLayer(
       _toiletsSourceId,
       _toiletsLayerId,
@@ -155,10 +208,14 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _addImages() async {
     if (_mapController == null) return;
 
-    final toiletBytes = (await rootBundle.load('assets/images/toiletPin.png')).buffer.asUint8List();
+    final toiletBytes = (await rootBundle.load('assets/images/toiletPin.png'))
+        .buffer
+        .asUint8List();
     await _mapController!.addImage('toilet-pin', toiletBytes);
 
-    final urgentBytes = (await rootBundle.load('assets/images/urgentPin.png')).buffer.asUint8List();
+    final urgentBytes = (await rootBundle.load('assets/images/urgentPin.png'))
+        .buffer
+        .asUint8List();
     await _mapController!.addImage('urgent-user-pin', urgentBytes);
   }
 
@@ -180,7 +237,12 @@ class _MapScreenState extends State<MapScreen> {
           }
         ]
       };
-      await _mapController!.setGeoJsonSource(_userLocationSourceId, geojson);
+
+      try {
+        await _mapController!.setGeoJsonSource(_userLocationSourceId, geojson);
+      } catch (e) {
+        debugPrint('Error updating user location: $e');
+      }
     }
   }
 
@@ -200,7 +262,12 @@ class _MapScreenState extends State<MapScreen> {
     }).toList();
 
     final geojson = {'type': 'FeatureCollection', 'features': features};
-    await _mapController!.setGeoJsonSource(_toiletsSourceId, geojson);
+
+    try {
+      await _mapController!.setGeoJsonSource(_toiletsSourceId, geojson);
+    } catch (e) {
+      debugPrint('Error updating toilet markers: $e');
+    }
   }
 
   void _recenterMap() {
@@ -210,7 +277,8 @@ class _MapScreenState extends State<MapScreen> {
       _mapController!.animateCamera(
         CameraUpdate.newCameraPosition(
           CameraPosition(
-            target: LatLng(appState.currentLocation!.latitude, appState.currentLocation!.longitude),
+            target: LatLng(appState.currentLocation!.latitude,
+                appState.currentLocation!.longitude),
             zoom: 15.0,
             tilt: _initialPitch,
           ),
@@ -222,7 +290,7 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _launchNavigation(Toilet toilet) async {
     final lat = toilet.latitude;
     final lon = toilet.longitude;
-    
+
     Uri uri;
 
     if (Platform.isIOS) {
@@ -230,7 +298,8 @@ class _MapScreenState extends State<MapScreen> {
       uri = Uri.parse('http://maps.apple.com/?daddr=$lat,$lon&dirflg=w');
     } else {
       // For Android and other platforms, use Google Maps URL with walking mode.
-      uri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lon&travelmode=walking');
+      uri = Uri.parse(
+          'https://www.google.com/maps/dir/?api=1&destination=$lat,$lon&travelmode=walking');
     }
 
     try {
@@ -286,16 +355,18 @@ class _MapScreenState extends State<MapScreen> {
       appBar: AppBar(
         centerTitle: true,
         backgroundColor: Theme.of(context).colorScheme.primary,
-        title: Text(widget.title, style: Theme.of(context).textTheme.displayLarge),
+        title:
+            Text(widget.title, style: Theme.of(context).textTheme.displayLarge),
       ),
       body: appState.currentLocation == null
           ? const Center(child: CircularProgressIndicator())
-          : MaplibreMap(
+          : MapLibreMap(
               styleString: _mapStyle,
               onMapCreated: _onMapCreated,
               onStyleLoadedCallback: _onStyleLoaded,
               initialCameraPosition: CameraPosition(
-                target: LatLng(appState.currentLocation!.latitude, appState.currentLocation!.longitude),
+                target: LatLng(appState.currentLocation!.latitude,
+                    appState.currentLocation!.longitude),
                 zoom: 15.0,
                 tilt: _initialPitch,
               ),
