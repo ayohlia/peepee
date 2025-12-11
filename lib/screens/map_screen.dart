@@ -1,9 +1,13 @@
+import 'dart:async';
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
-
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../models/toilet_model.dart';
 import '../providers/app_state.dart';
 
 class MapScreen extends StatefulWidget {
@@ -16,7 +20,6 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
-  // URL du style Plan IGN standard (souvent un bon point de départ pour le routier)
   static const String _mapStyle =
       "https://data.geopf.fr/annexes/ressources/vectorTiles/styles/PLAN.IGN/standard.json";
   static const double _initialPitch = 60.0;
@@ -27,12 +30,14 @@ class _MapScreenState extends State<MapScreen> {
 
   MaplibreMapController? _mapController;
   bool _styleLoaded = false;
-  bool _isUpdatingSources = false; // Lock flag
+  bool _isUpdatingSources = false;
   bool _sourcesAdded = false;
+  bool _toiletMarkersAdded = false;
 
   @override
   void initState() {
     super.initState();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final appState = Provider.of<AppState>(context, listen: false);
       appState.addListener(_onAppStateUpdated);
@@ -59,9 +64,17 @@ class _MapScreenState extends State<MapScreen> {
 
     _isUpdatingSources = true;
     try {
-      // Run updates sequentially to avoid race conditions.
-      await _addToiletMarkers();
+      // Only update user location marker as it's the one changing frequently
       await _updateUserLocationMarker();
+
+      // Add toilet markers only once
+      final appState = Provider.of<AppState>(context, listen: false);
+      if (appState.nearbyToilets.isNotEmpty && !_toiletMarkersAdded) {
+        await _addToiletMarkers();
+        setState(() {
+          _toiletMarkersAdded = true;
+        });
+      }
     } finally {
       _isUpdatingSources = false;
     }
@@ -69,6 +82,24 @@ class _MapScreenState extends State<MapScreen> {
 
   void _onMapCreated(MaplibreMapController controller) {
     _mapController = controller;
+    _mapController!.onSymbolTapped.add(_onSymbolTapped);
+  }
+
+  void _onSymbolTapped(Symbol symbol) {
+    final properties = symbol.data;
+    if (properties == null || properties['id'] == null) {
+      return;
+    }
+
+    final toiletId = properties['id'];
+    final appState = Provider.of<AppState>(context, listen: false);
+    
+    try {
+      final toilet = appState.nearbyToilets.firstWhere((t) => t.id == toiletId);
+      _showToiletDetails(toilet);
+    } catch (e) {
+      debugPrint('Toilet with id $toiletId not found.');
+    }
   }
 
   Future<void> _onStyleLoaded() async {
@@ -79,52 +110,35 @@ class _MapScreenState extends State<MapScreen> {
       await _initializeMapSources();
       _sourcesAdded = true;
     }
-    _onAppStateUpdated(); // Initial call to load data
+    _onAppStateUpdated();
   }
 
   Future<void> _initializeMapSources() async {
     if (_mapController == null) return;
 
-    // Defensively remove existing layers and sources to prevent crashes on hot restart
-    try {
-      await _mapController!.removeLayer(_userLocationLayerId);
-      await _mapController!.removeSource(_userLocationSourceId);
-    } catch (_) {
-      // Ignore if they don't exist
-    }
-    try {
-      await _mapController!.removeLayer(_toiletsLayerId);
-      await _mapController!.removeSource(_toiletsSourceId);
-    } catch (_) {
-      // Ignore if they don't exist
-    }
-
-    // Add user location source and layer
+    // Simplified source initialization
     await _mapController!.addSource(
       _userLocationSourceId,
-      const GeojsonSourceProperties(data: {
-        'type': 'FeatureCollection',
-        'features': [],
-      }),
+      const GeojsonSourceProperties(data: {'type': 'FeatureCollection', 'features': []}),
     );
-    await _mapController!.addLayer(
-        _userLocationSourceId,
-        _userLocationLayerId,
-        const SymbolLayerProperties(
-          iconImage: 'urgent-user-pin',
-          iconSize: 0.5,
-          iconAllowOverlap: true,
-          iconIgnorePlacement: true,
-        ));
 
-    // Add toilets source and layer
+    await _mapController!.addLayer(
+      _userLocationSourceId,
+      _userLocationLayerId,
+      const SymbolLayerProperties(
+        iconImage: 'urgent-user-pin',
+        iconSize: 0.4,
+        iconAllowOverlap: true,
+        iconIgnorePlacement: true,
+        iconAnchor: 'bottom',
+      ),
+    );
+
     await _mapController!.addSource(
       _toiletsSourceId,
-      const GeojsonSourceProperties(data: {
-        'type': 'FeatureCollection',
-        'features': [],
-      }),
+      const GeojsonSourceProperties(data: {'type': 'FeatureCollection', 'features': []}),
     );
+
     await _mapController!.addLayer(
       _toiletsSourceId,
       _toiletsLayerId,
@@ -132,19 +146,19 @@ class _MapScreenState extends State<MapScreen> {
         iconImage: 'toilet-pin',
         iconSize: 0.5,
         iconAllowOverlap: true,
+        iconIgnorePlacement: true,
+        iconAnchor: 'bottom',
       ),
     );
   }
 
   Future<void> _addImages() async {
     if (_mapController == null) return;
-    final ByteData byteData =
-        await rootBundle.load('assets/images/toiletPin.png');
-    final Uint8List bytes = byteData.buffer.asUint8List();
-    await _mapController!.addImage('toilet-pin', bytes);
-    final urgentBytes = (await rootBundle.load('assets/images/urgentPin.png'))
-        .buffer
-        .asUint8List();
+
+    final toiletBytes = (await rootBundle.load('assets/images/toiletPin.png')).buffer.asUint8List();
+    await _mapController!.addImage('toilet-pin', toiletBytes);
+
+    final urgentBytes = (await rootBundle.load('assets/images/urgentPin.png')).buffer.asUint8List();
     await _mapController!.addImage('urgent-user-pin', urgentBytes);
   }
 
@@ -166,7 +180,6 @@ class _MapScreenState extends State<MapScreen> {
           }
         ]
       };
-
       await _mapController!.setGeoJsonSource(_userLocationSourceId, geojson);
     }
   }
@@ -182,15 +195,11 @@ class _MapScreenState extends State<MapScreen> {
           'type': 'Point',
           'coordinates': [toilet.longitude, toilet.latitude],
         },
-        'properties': {},
+        'properties': {'id': toilet.id},
       };
     }).toList();
 
-    final geojson = {
-      'type': 'FeatureCollection',
-      'features': features,
-    };
-
+    final geojson = {'type': 'FeatureCollection', 'features': features};
     await _mapController!.setGeoJsonSource(_toiletsSourceId, geojson);
   }
 
@@ -201,14 +210,72 @@ class _MapScreenState extends State<MapScreen> {
       _mapController!.animateCamera(
         CameraUpdate.newCameraPosition(
           CameraPosition(
-            target: LatLng(appState.currentLocation!.latitude,
-                appState.currentLocation!.longitude),
+            target: LatLng(appState.currentLocation!.latitude, appState.currentLocation!.longitude),
             zoom: 15.0,
             tilt: _initialPitch,
           ),
         ),
       );
     }
+  }
+
+  Future<void> _launchNavigation(Toilet toilet) async {
+    final lat = toilet.latitude;
+    final lon = toilet.longitude;
+    
+    Uri uri;
+
+    if (Platform.isIOS) {
+      // For iOS, use Apple Maps URL scheme for walking directions.
+      uri = Uri.parse('http://maps.apple.com/?daddr=$lat,$lon&dirflg=w');
+    } else {
+      // For Android and other platforms, use Google Maps URL with walking mode.
+      uri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lon&travelmode=walking');
+    }
+
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Impossible de lancer la navigation.')),
+        );
+      }
+    }
+  }
+
+  void _showToiletDetails(Toilet toilet) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                toilet.name ?? 'Toilettes publiques',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              if (toilet.openingHours != null) ...[
+                Text('Horaires: ${toilet.openingHours}'),
+                const SizedBox(height: 8),
+              ],
+              ElevatedButton.icon(
+                icon: const Icon(Icons.navigation),
+                label: const Text('Y aller'),
+                onPressed: () {
+                  Navigator.pop(context);
+                  _launchNavigation(toilet);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -219,8 +286,7 @@ class _MapScreenState extends State<MapScreen> {
       appBar: AppBar(
         centerTitle: true,
         backgroundColor: Theme.of(context).colorScheme.primary,
-        title:
-            Text(widget.title, style: Theme.of(context).textTheme.displayLarge),
+        title: Text(widget.title, style: Theme.of(context).textTheme.displayLarge),
       ),
       body: appState.currentLocation == null
           ? const Center(child: CircularProgressIndicator())
@@ -229,12 +295,11 @@ class _MapScreenState extends State<MapScreen> {
               onMapCreated: _onMapCreated,
               onStyleLoadedCallback: _onStyleLoaded,
               initialCameraPosition: CameraPosition(
-                target: LatLng(appState.currentLocation!.latitude,
-                    appState.currentLocation!.longitude),
+                target: LatLng(appState.currentLocation!.latitude, appState.currentLocation!.longitude),
                 zoom: 15.0,
                 tilt: _initialPitch,
               ),
-              myLocationEnabled: false, // Désactive le point par défaut
+              myLocationEnabled: false,
               myLocationTrackingMode: MyLocationTrackingMode.none,
             ),
       floatingActionButton: FloatingActionButton(
