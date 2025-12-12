@@ -28,7 +28,7 @@ class _MapScreenState extends State<MapScreen> {
   static const _toiletsSourceId = 'toilets-source';
   static const _toiletsLayerId = 'toilets-layer';
 
-  MaplibreMapController? _mapController;
+  MapLibreMapController? _mapController;
   bool _styleLoaded = false;
   bool _isUpdatingSources = false;
   bool _sourcesAdded = false;
@@ -62,18 +62,21 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _updateSources() async {
     if (_isUpdatingSources || _mapController == null) return;
 
+    if (!mounted) return;
+    final appState = Provider.of<AppState>(context, listen: false);
+
     _isUpdatingSources = true;
     try {
       // Délai de synchronisation
       await Future.delayed(const Duration(milliseconds: 100));
 
       // Update user location marker
-      await _updateUserLocationMarker();
+      await _updateUserLocationMarker(appState);
 
       // Add toilet markers only once
-      final appState = Provider.of<AppState>(context, listen: false);
       if (appState.nearbyToilets.isNotEmpty && !_toiletMarkersAdded) {
-        await _addToiletMarkers();
+        await _addToiletMarkers(appState);
+        if (!mounted) return;
         setState(() {
           _toiletMarkersAdded = true;
         });
@@ -83,7 +86,7 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  void _onMapCreated(MaplibreMapController controller) {
+  void _onMapCreated(MapLibreMapController controller) {
     _mapController = controller;
     _mapController!.onSymbolTapped.add(_onSymbolTapped);
   }
@@ -219,9 +222,8 @@ class _MapScreenState extends State<MapScreen> {
     await _mapController!.addImage('urgent-user-pin', urgentBytes);
   }
 
-  Future<void> _updateUserLocationMarker() async {
+  Future<void> _updateUserLocationMarker(AppState appState) async {
     if (_mapController == null) return;
-    final appState = Provider.of<AppState>(context, listen: false);
     final location = appState.currentLocation;
 
     if (location != null) {
@@ -246,9 +248,8 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  Future<void> _addToiletMarkers() async {
+  Future<void> _addToiletMarkers(AppState appState) async {
     if (_mapController == null) return;
-    final appState = Provider.of<AppState>(context, listen: false);
 
     final features = appState.nearbyToilets.map((toilet) {
       return {
