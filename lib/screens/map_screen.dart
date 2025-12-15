@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
@@ -32,7 +32,7 @@ class _MapScreenState extends State<MapScreen> {
   bool _styleLoaded = false;
   bool _isUpdatingSources = false;
   bool _sourcesAdded = false;
-  bool _toiletMarkersAdded = false;
+  int _lastToiletsCount = 0;
 
   @override
   void initState() {
@@ -73,12 +73,12 @@ class _MapScreenState extends State<MapScreen> {
       // Update user location marker
       await _updateUserLocationMarker(appState);
 
-      // Add toilet markers only once
-      if (appState.nearbyToilets.isNotEmpty && !_toiletMarkersAdded) {
+      if (appState.nearbyToilets.isNotEmpty &&
+          appState.nearbyToilets.length != _lastToiletsCount) {
         await _addToiletMarkers(appState);
         if (!mounted) return;
         setState(() {
-          _toiletMarkersAdded = true;
+          _lastToiletsCount = appState.nearbyToilets.length;
         });
       }
     } finally {
@@ -294,7 +294,7 @@ class _MapScreenState extends State<MapScreen> {
 
     Uri uri;
 
-    if (Platform.isIOS) {
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
       // For iOS, use Apple Maps URL scheme for walking directions.
       uri = Uri.parse('http://maps.apple.com/?daddr=$lat,$lon&dirflg=w');
     } else {
@@ -304,6 +304,10 @@ class _MapScreenState extends State<MapScreen> {
     }
 
     try {
+      final canLaunch = await canLaunchUrl(uri);
+      if (!canLaunch) {
+        throw Exception('Cannot launch navigation');
+      }
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (e) {
       if (mounted) {
@@ -359,21 +363,47 @@ class _MapScreenState extends State<MapScreen> {
         title:
             Text(widget.title, style: Theme.of(context).textTheme.displayLarge),
       ),
-      body: appState.currentLocation == null
-          ? const Center(child: CircularProgressIndicator())
-          : MapLibreMap(
-              styleString: _mapStyle,
-              onMapCreated: _onMapCreated,
-              onStyleLoadedCallback: _onStyleLoaded,
-              initialCameraPosition: CameraPosition(
-                target: LatLng(appState.currentLocation!.latitude,
-                    appState.currentLocation!.longitude),
-                zoom: 15.0,
-                tilt: _initialPitch,
+      body: Stack(
+        children: [
+          appState.currentLocation == null
+              ? const Center(child: CircularProgressIndicator())
+              : MapLibreMap(
+                  styleString: _mapStyle,
+                  onMapCreated: _onMapCreated,
+                  onStyleLoadedCallback: _onStyleLoaded,
+                  initialCameraPosition: CameraPosition(
+                    target: LatLng(appState.currentLocation!.latitude,
+                        appState.currentLocation!.longitude),
+                    zoom: 15.0,
+                    tilt: _initialPitch,
+                  ),
+                  myLocationEnabled: false,
+                  myLocationTrackingMode: MyLocationTrackingMode.none,
+                ),
+          if (appState.errorMessage != null)
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 12,
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.75),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    appState.errorMessage!,
+                    style: const TextStyle(color: Colors.white),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
               ),
-              myLocationEnabled: false,
-              myLocationTrackingMode: MyLocationTrackingMode.none,
             ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _recenterMap,
         backgroundColor: Theme.of(context).colorScheme.primary,

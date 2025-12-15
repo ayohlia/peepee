@@ -7,12 +7,19 @@ import 'assets/app_theme.dart';
 import 'providers/app_state.dart';
 import 'service_locator.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  setupServiceLocator(); // Initialize the service locator
-  WakelockPlus.enable();
-  runApp(ChangeNotifierProvider(
-      create: (context) => AppState(), child: const PeePee()));
+
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+  };
+
+  setupServiceLocator();
+  await WakelockPlus.enable();
+  runApp(
+    ChangeNotifierProvider(
+        create: (context) => AppState(), child: const PeePee()),
+  );
 }
 
 class PeePee extends StatelessWidget {
