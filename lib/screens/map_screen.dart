@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/toilet_model.dart';
 import '../providers/app_state.dart';
+import '../services/marker_manager_service.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key, required this.title});
@@ -25,14 +27,16 @@ class _MapScreenState extends State<MapScreen> {
   static const double _initialPitch = 60.0;
   static const _userLocationSourceId = 'user-location-source';
   static const _userLocationLayerId = 'user-location-layer';
-  static const _toiletsSourceId = 'toilets-source';
-  static const _toiletsLayerId = 'toilets-layer';
 
   MapLibreMapController? _mapController;
   bool _styleLoaded = false;
   bool _isUpdatingSources = false;
   bool _sourcesAdded = false;
   int _lastToiletsCount = 0;
+  double _currentZoom = 15.0;
+
+  MarkerManagerService? _markerManager;
+  Timer? _mapUpdateDebounce;
 
   @override
   void initState() {
@@ -49,6 +53,8 @@ class _MapScreenState extends State<MapScreen> {
   void dispose() {
     Provider.of<AppState>(context, listen: false)
         .removeListener(_onAppStateUpdated);
+    _markerManager?.dispose();
+    _mapUpdateDebounce?.cancel();
     _mapController?.dispose();
     super.dispose();
   }
@@ -56,6 +62,11 @@ class _MapScreenState extends State<MapScreen> {
   void _onAppStateUpdated() {
     if (_styleLoaded && _sourcesAdded) {
       _updateSources();
+      // Mettre à jour la sélection dans le MarkerManager SANS recréer les marqueurs
+      final appState = Provider.of<AppState>(context, listen: false);
+      if (_markerManager != null) {
+        _markerManager!.selectedToiletId = appState.selectedToiletId;
+      }
     }
   }
 
@@ -73,13 +84,22 @@ class _MapScreenState extends State<MapScreen> {
       // Update user location marker
       await _updateUserLocationMarker(appState);
 
-      if (appState.nearbyToilets.isNotEmpty &&
-          appState.nearbyToilets.length != _lastToiletsCount) {
-        await _addToiletMarkers(appState);
-        if (!mounted) return;
-        setState(() {
+      // Mettre à jour les marqueurs SEULEMENT si la liste des toilettes a changé
+      if (_markerManager != null && appState.nearbyToilets.isNotEmpty) {
+        // Vérifier si la liste des toilettes a changé
+        if (appState.nearbyToilets.length != _lastToiletsCount) {
+          final bounds = await _mapController!.getVisibleRegion();
+          _currentZoom =
+              15.0; // Valeur par défaut si getCameraPosition n'existe pas
+
+          await _markerManager!.updateMarkers(
+            allToilets: appState.nearbyToilets,
+            visibleBounds: bounds,
+            zoomLevel: _currentZoom,
+          );
+
           _lastToiletsCount = appState.nearbyToilets.length;
-        });
+        }
       }
     } finally {
       _isUpdatingSources = false;
@@ -88,23 +108,34 @@ class _MapScreenState extends State<MapScreen> {
 
   void _onMapCreated(MapLibreMapController controller) {
     _mapController = controller;
+    _markerManager = MarkerManagerService(controller);
     _mapController!.onSymbolTapped.add(_onSymbolTapped);
   }
 
   void _onSymbolTapped(Symbol symbol) {
-    final properties = symbol.data;
-    if (properties == null || properties['id'] == null) {
-      return;
-    }
+    debugPrint('Symbol tapped');
 
-    final toiletId = properties['id'];
+    if (_markerManager == null) return;
+
     final appState = Provider.of<AppState>(context, listen: false);
 
-    try {
-      final toilet = appState.nearbyToilets.firstWhere((t) => t.id == toiletId);
-      _showToiletDetails(toilet);
-    } catch (e) {
-      debugPrint('Toilet with id $toiletId not found.');
+    // Vérifier si c'est un cluster ou un marqueur individuel
+    if (_markerManager!.isClusterSymbol(symbol)) {
+      _handleClusterTap(symbol);
+    } else {
+      final toilet = _markerManager!.getToiletFromSymbol(symbol);
+      if (toilet != null) {
+        // Sélectionner ou désélectionner la toilette
+        if (appState.selectedToiletId == toilet.id.toString()) {
+          debugPrint('Deselecting toilet');
+          appState.deselectToilet();
+        } else {
+          debugPrint('Selecting toilet');
+          appState.selectToilet(toilet.id.toString());
+          _showToiletDetails(toilet);
+        }
+        // La mise à jour du marqueur sélectionné se fait automatiquement via _onAppStateUpdated
+      }
     }
   }
 
@@ -186,26 +217,6 @@ class _MapScreenState extends State<MapScreen> {
         iconAnchor: 'bottom',
       ),
     );
-
-    // Source pour les toilettes
-    await _mapController!.addSource(
-      _toiletsSourceId,
-      const GeojsonSourceProperties(
-          data: {'type': 'FeatureCollection', 'features': []}),
-    );
-
-    // Pin des toilettes
-    await _mapController!.addLayer(
-      _toiletsSourceId,
-      _toiletsLayerId,
-      const SymbolLayerProperties(
-        iconImage: 'toilet-pin',
-        iconSize: 0.5,
-        iconAllowOverlap: true,
-        iconIgnorePlacement: true,
-        iconAnchor: 'bottom',
-      ),
-    );
   }
 
   Future<void> _addImages() async {
@@ -220,6 +231,141 @@ class _MapScreenState extends State<MapScreen> {
         .buffer
         .asUint8List();
     await _mapController!.addImage('urgent-user-pin', urgentBytes);
+
+    // Ajouter une icône de cluster simple (cercle bleu)
+    await _mapController!.addImage('cluster-pin', await _createClusterIcon());
+
+    // Ajouter une icône pour le pin sélectionné avec contour
+    await _mapController!
+        .addImage('toilet-pin-selected', await _createSelectedPinIcon());
+  }
+
+  Future<Uint8List> _createClusterIcon() async {
+    // Créer une icône de cluster simple
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    final paint = Paint()
+      ..color = Colors.blue
+      ..style = PaintingStyle.fill;
+
+    // Dessiner un cercle
+    canvas.drawCircle(const Offset(25, 25), 20, paint);
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(50, 50);
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+
+    return byteData!.buffer.asUint8List();
+  }
+
+  Future<Uint8List> _createSelectedPinIcon() async {
+    // Créer une icône de pin sélectionné avec contour vert
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    // Dessiner le contour (cercle vert plus grand)
+    final contourPaint = Paint()
+      ..color = const Color(0xFF4CAF50)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(const Offset(30, 30), 28, contourPaint);
+
+    // Dessiner le cercle blanc intérieur
+    final whitePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(const Offset(30, 30), 25, whitePaint);
+
+    // Dessiner le cercle bleu principal (pin)
+    final pinPaint = Paint()
+      ..color = Colors.blue
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(const Offset(30, 30), 20, pinPaint);
+
+    // Ajouter un petit cercle blanc au centre pour l'effet de pin
+    final centerPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(const Offset(30, 30), 8, centerPaint);
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(60, 60);
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+
+    return byteData!.buffer.asUint8List();
+  }
+
+  Future<void> _handleClusterTap(Symbol clusterSymbol) async {
+    if (_markerManager == null) return;
+
+    final toilets = await _markerManager!.getToiletsInCluster(clusterSymbol);
+    if (toilets.isEmpty) return;
+
+    // Zoom sur le cluster (utiliser le centre du cluster)
+    final clusterData = _markerManager!.symbolData[clusterSymbol.id];
+    if (clusterData != null && clusterData['cluster'] != null) {
+      final cluster = clusterData['cluster'] as MarkerCluster;
+      await _mapController?.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: cluster.center,
+            zoom: _currentZoom + 2, // Zoomer de 2 niveaux
+          ),
+        ),
+      );
+    }
+
+    // Afficher les toilettes du cluster dans une modal
+    _showClusterToiletsModal(toilets);
+  }
+
+  void _showClusterToiletsModal(List<Toilet> toilets) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          expand: false,
+          builder: (context, scrollController) {
+            return Container(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    '${toilets.length} toilettes dans cette zone',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: ListView.builder(
+                      controller: scrollController,
+                      itemCount: toilets.length,
+                      itemBuilder: (context, index) {
+                        final toilet = toilets[index];
+                        return ListTile(
+                          title: Text(toilet.name ?? 'Toilettes publiques'),
+                          subtitle: toilet.openingHours != null
+                              ? Text(toilet.openingHours!)
+                              : null,
+                          trailing: const Icon(Icons.navigation),
+                          onTap: () {
+                            Navigator.pop(context);
+                            final appState =
+                                Provider.of<AppState>(context, listen: false);
+                            appState.selectToilet(toilet.id.toString());
+                            _showToiletDetails(toilet);
+                            // La mise à jour du marqueur sélectionné se fait automatiquement
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _updateUserLocationMarker(AppState appState) async {
@@ -245,29 +391,6 @@ class _MapScreenState extends State<MapScreen> {
       } catch (e) {
         debugPrint('Error updating user location: $e');
       }
-    }
-  }
-
-  Future<void> _addToiletMarkers(AppState appState) async {
-    if (_mapController == null) return;
-
-    final features = appState.nearbyToilets.map((toilet) {
-      return {
-        'type': 'Feature',
-        'geometry': {
-          'type': 'Point',
-          'coordinates': [toilet.longitude, toilet.latitude],
-        },
-        'properties': {'id': toilet.id},
-      };
-    }).toList();
-
-    final geojson = {'type': 'FeatureCollection', 'features': features};
-
-    try {
-      await _mapController!.setGeoJsonSource(_toiletsSourceId, geojson);
-    } catch (e) {
-      debugPrint('Error updating toilet markers: $e');
     }
   }
 

@@ -7,15 +7,16 @@ import 'package:peepee/service_locator.dart';
 import '../errors/app_exception.dart';
 import '../models/toilet_model.dart';
 import '../services/connectivity_service.dart';
+import '../services/lazy_toilets_service.dart';
 import '../services/location_service.dart';
 import '../services/toilets_service.dart';
-import '../utils/toilet_fetch_helper.dart';
 
 class AppState with ChangeNotifier {
   Position? _currentLocation;
   bool _hasInternet = true;
   List<Toilet> _nearbyToilets = [];
   String? _errorMessage;
+  String? _selectedToiletId;
   StreamSubscription<Position>? _positionStreamSubscription;
   StreamSubscription<bool>? _connectivitySubscription;
   Timer? _gpsCheckTimer;
@@ -24,18 +25,25 @@ class AppState with ChangeNotifier {
   final LocationService _locationService = getIt<LocationService>();
   final ConnectivityService _connectivityService = getIt<ConnectivityService>();
   final ToiletsService _toiletsService = getIt<ToiletsService>();
+  late final LazyToiletsService _lazyToiletsService;
 
   Position? get currentLocation => _currentLocation;
   bool get hasInternet => _hasInternet;
   List<Toilet> get nearbyToilets => _nearbyToilets;
   String? get errorMessage => _errorMessage;
+  String? get selectedToiletId => _selectedToiletId;
 
   @override
   void dispose() {
     stopLocationUpdates();
     _connectivitySubscription?.cancel();
     _gpsCheckTimer?.cancel();
+    _lazyToiletsService.dispose();
     super.dispose();
+  }
+
+  void _initializeServices() {
+    _lazyToiletsService = LazyToiletsService(_toiletsService);
   }
 
   void _clearError() {
@@ -116,6 +124,7 @@ class AppState with ChangeNotifier {
 
   Future<void> updateLocation() async {
     try {
+      _initializeServices(); // Initialiser les services ici
       _clearError();
       await checkConnectivity();
       startConnectivityUpdates();
@@ -142,19 +151,19 @@ class AppState with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> updateNearbyToilets() async {
+  Future<void> updateNearbyToilets({double? zoomLevel, int? maxResults}) async {
     if (_isFetchingToilets) return;
     if (_currentLocation != null && _hasInternet) {
       try {
         _isFetchingToilets = true;
         _clearError();
 
-        // Exécuter le traitement dans un isolate pour éviter de bloquer le thread principal
-        final toilets = await compute(fetchToiletsInBackground, [
-          _currentLocation!.latitude,
-          _currentLocation!.longitude,
-          _toiletsService
-        ]);
+        // Utiliser le service optimisé avec chargement paresseux
+        final toilets = await _lazyToiletsService.getToiletsOptimized(
+          center: _currentLocation!,
+          zoomLevel: zoomLevel ?? 15.0,
+          maxResults: maxResults,
+        );
 
         _nearbyToilets = toilets;
         notifyListeners();
@@ -170,6 +179,20 @@ class AppState with ChangeNotifier {
       } finally {
         _isFetchingToilets = false;
       }
+    }
+  }
+
+  void selectToilet(String? toiletId) {
+    if (_selectedToiletId != toiletId) {
+      _selectedToiletId = toiletId;
+      notifyListeners();
+    }
+  }
+
+  void deselectToilet() {
+    if (_selectedToiletId != null) {
+      _selectedToiletId = null;
+      notifyListeners();
     }
   }
 }

@@ -1,0 +1,355 @@
+import 'dart:async';
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/rendering.dart';
+import 'package:maplibre_gl/maplibre_gl.dart';
+
+import '../models/toilet_model.dart';
+
+class MarkerCluster {
+  final List<Toilet> toilets;
+  final LatLng center;
+  final int count;
+
+  MarkerCluster(this.toilets)
+      : center = _calculateCenter(toilets),
+        count = toilets.length;
+
+  static LatLng _calculateCenter(List<Toilet> toilets) {
+    if (toilets.isEmpty) return const LatLng(0, 0);
+
+    double totalLat = 0;
+    double totalLng = 0;
+
+    for (final toilet in toilets) {
+      totalLat += toilet.latitude;
+      totalLng += toilet.longitude;
+    }
+
+    return LatLng(totalLat / toilets.length, totalLng / toilets.length);
+  }
+}
+
+class MarkerManagerService {
+  static const double _clusterRadius = 0.002; // ~200m
+  static const int _maxMarkersPerBatch = 50;
+  static const int _maxMarkersVisible = 500; // Augmenté de 200 à 500
+
+  final MapLibreMapController _mapController;
+  final List<Symbol> _visibleSymbols = [];
+  final List<Symbol> _clusterSymbols = [];
+  final Map<String, dynamic> _symbolData = {}; // Stockage externe des données
+
+  Timer? _debounceTimer;
+  bool _isLoading = false;
+  String? _selectedToiletId;
+
+  MarkerManagerService(this._mapController);
+
+  bool get isLoading => _isLoading;
+  int get visibleMarkersCount => _visibleSymbols.length;
+  int get clusterCount => _clusterSymbols.length;
+
+  // Getter pour accéder aux données des symboles depuis MapScreen
+  Map<String, dynamic> get symbolData => _symbolData;
+
+  // Setter pour mettre à jour la toilette sélectionnée
+  set selectedToiletId(String? id) {
+    if (_selectedToiletId != id) {
+      _selectedToiletId = id;
+      // Forcer la mise à jour des marqueurs pour refléter la sélection
+      _updateSelectedMarker();
+    }
+  }
+
+  Future<void> updateMarkers({
+    required List<Toilet> allToilets,
+    required LatLngBounds visibleBounds,
+    required double zoomLevel,
+  }) async {
+    if (_isLoading) return;
+
+    _isLoading = true;
+
+    try {
+      // Debounce les mises à jour rapides
+      _debounceTimer?.cancel();
+      _debounceTimer = Timer(const Duration(milliseconds: 300), () async {
+        await _performMarkerUpdate(allToilets, visibleBounds, zoomLevel);
+      });
+    } finally {
+      _isLoading = false;
+    }
+  }
+
+  Future<void> _performMarkerUpdate(
+    List<Toilet> allToilets,
+    LatLngBounds visibleBounds,
+    double zoomLevel,
+  ) async {
+    // Filtrer les toilettes visibles
+    final visibleToilets = _filterVisibleToilets(allToilets, visibleBounds);
+
+    if (kDebugMode) {
+      print('Visible toilets: ${visibleToilets.length} / ${allToilets.length}');
+    }
+
+    // Clustering ou affichage individuel selon le zoom
+    if (zoomLevel < 14 && visibleToilets.length > _maxMarkersVisible) {
+      await _showClusteredMarkers(visibleToilets);
+    } else {
+      await _showIndividualMarkers(visibleToilets);
+    }
+  }
+
+  List<Toilet> _filterVisibleToilets(
+      List<Toilet> toilets, LatLngBounds bounds) {
+    if (kDebugMode) {
+      print(
+          'Bounds: NE(${bounds.northeast.latitude}, ${bounds.northeast.longitude}) - SW(${bounds.southwest.latitude}, ${bounds.southwest.longitude})');
+      print('Total toilets available: ${toilets.length}');
+    }
+
+    // Retourner TOUS les pins sans filtrage géographique
+    // Les toilettes sont déjà filtrées par rayon de 50km dans le service
+    if (kDebugMode) {
+      print('Showing all toilets without geographic filtering');
+    }
+    return toilets;
+  }
+
+  Future<void> _showClusteredMarkers(List<Toilet> toilets) async {
+    await _clearAllMarkers();
+
+    // Vérifier si une toilette est sélectionnée et l'extraire du clustering
+    Toilet? selectedToilet;
+    if (_selectedToiletId != null) {
+      try {
+        selectedToilet =
+            toilets.firstWhere((t) => t.id.toString() == _selectedToiletId);
+      } catch (e) {
+        // La toilette sélectionnée n'est pas dans la liste
+      }
+    }
+
+    // Créer les clusters avec les toilettes non sélectionnées
+    final nonSelectedToilets = selectedToilet != null
+        ? toilets.where((t) => t.id.toString() != _selectedToiletId).toList()
+        : toilets;
+
+    final finalClusters = _createClusters(nonSelectedToilets);
+
+    // Afficher les clusters par lots
+    for (int i = 0; i < finalClusters.length; i += _maxMarkersPerBatch) {
+      final batch = finalClusters.skip(i).take(_maxMarkersPerBatch).toList();
+      await _createClusterSymbols(batch);
+
+      // Petit délai pour ne pas bloquer l'UI
+      if (i + _maxMarkersPerBatch < finalClusters.length) {
+        await Future.delayed(const Duration(milliseconds: 10));
+      }
+    }
+
+    // Ajouter le pin sélectionné individuellement s'il existe
+    if (selectedToilet != null) {
+      await _createIndividualSymbols([selectedToilet]);
+    }
+  }
+
+  Future<void> _showIndividualMarkers(List<Toilet> toilets) async {
+    await _clearAllMarkers();
+
+    // Limiter le nombre de marqueurs individuels
+    final limitedToilets = toilets.take(_maxMarkersVisible).toList();
+
+    // Afficher les marqueurs par lots
+    for (int i = 0; i < limitedToilets.length; i += _maxMarkersPerBatch) {
+      final batch = limitedToilets.skip(i).take(_maxMarkersPerBatch).toList();
+      await _createIndividualSymbols(batch);
+
+      // Petit délai pour ne pas bloquer l'UI
+      if (i + _maxMarkersPerBatch < limitedToilets.length) {
+        await Future.delayed(const Duration(milliseconds: 10));
+      }
+    }
+  }
+
+  List<MarkerCluster> _createClusters(List<Toilet> toilets) {
+    final clusters = <MarkerCluster>[];
+    final processed = <Toilet>{};
+
+    for (final toilet in toilets) {
+      if (processed.contains(toilet)) continue;
+
+      // Trouver les toilettes proches
+      final nearbyToilets = toilets.where((other) {
+        if (processed.contains(other)) return false;
+
+        final distance = _calculateDistance(
+          LatLng(toilet.latitude, toilet.longitude),
+          LatLng(other.latitude, other.longitude),
+        );
+
+        return distance <= _clusterRadius;
+      }).toList();
+
+      // Marquer comme traitées
+      processed.addAll(nearbyToilets);
+
+      // Créer un cluster
+      clusters.add(MarkerCluster(nearbyToilets));
+    }
+
+    return clusters;
+  }
+
+  double _calculateDistance(LatLng point1, LatLng point2) {
+    const double earthRadius = 6371000; // mètres
+
+    final double lat1Rad = point1.latitude * math.pi / 180;
+    final double lat2Rad = point2.latitude * math.pi / 180;
+    final double deltaLatRad =
+        (point2.latitude - point1.latitude) * math.pi / 180;
+    final double deltaLngRad =
+        (point2.longitude - point1.longitude) * math.pi / 180;
+
+    final double a = math.sin(deltaLatRad / 2) * math.sin(deltaLatRad / 2) +
+        math.cos(lat1Rad) *
+            math.cos(lat2Rad) *
+            math.sin(deltaLngRad / 2) *
+            math.sin(deltaLngRad / 2);
+
+    final double c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+
+    return earthRadius * c;
+  }
+
+  Future<void> _createClusterSymbols(List<MarkerCluster> clusters) async {
+    for (final cluster in clusters) {
+      try {
+        final symbol = await _mapController.addSymbol(
+          SymbolOptions(
+            geometry: cluster.center,
+            iconImage: 'cluster-pin',
+            iconSize: 0.6,
+            iconAnchor: 'center',
+            textField: cluster.count.toString(),
+            textSize: 12.0,
+            textColor: '#FFFFFF',
+            textHaloColor: '#000000',
+            textHaloWidth: 1.0,
+            textAnchor: 'center',
+            textOffset: const Offset(0.0, 0.0),
+          ),
+        );
+
+        // Stocker les données dans notre Map externe
+        _symbolData[symbol.id] = {'cluster': cluster};
+        _clusterSymbols.add(symbol);
+      } catch (e) {
+        debugPrint('Error creating cluster symbol: $e');
+      }
+    }
+  }
+
+  Future<void> _createIndividualSymbols(List<Toilet> toilets) async {
+    for (final toilet in toilets) {
+      try {
+        // Vérifier si cette toilette est sélectionnée
+        final isSelected = _isToiletSelected(toilet);
+
+        final symbol = await _mapController.addSymbol(
+          SymbolOptions(
+            geometry: LatLng(toilet.latitude, toilet.longitude),
+            iconImage: isSelected ? 'toilet-pin-selected' : 'toilet-pin',
+            iconSize: 0.5,
+            iconAnchor: 'bottom',
+          ),
+        );
+
+        // Stocker les données dans notre Map externe
+        _symbolData[symbol.id] = {'toilet': toilet};
+        _visibleSymbols.add(symbol);
+      } catch (e) {
+        debugPrint('Error creating individual symbol: $e');
+      }
+    }
+  }
+
+  bool _isToiletSelected(Toilet toilet) {
+    // Vérifier si cette toilette est sélectionnée
+    return _selectedToiletId == toilet.id.toString();
+  }
+
+  Future<void> _updateSelectedMarker() async {
+    // Mettre à jour uniquement l'icône du marqueur sélectionné
+    for (final symbol in _visibleSymbols) {
+      final data = _symbolData[symbol.id];
+      if (data != null && data['toilet'] != null) {
+        final toilet = data['toilet'] as Toilet;
+        final isSelected = _isToiletSelected(toilet);
+
+        try {
+          await _mapController.updateSymbol(
+            symbol,
+            SymbolOptions(
+              iconImage: isSelected ? 'toilet-pin-selected' : 'toilet-pin',
+              iconSize: 0.5,
+              iconAnchor: 'bottom',
+            ),
+          );
+        } catch (e) {
+          debugPrint('Error updating symbol: $e');
+        }
+      }
+    }
+  }
+
+  Future<void> _clearAllMarkers() async {
+    try {
+      // Supprimer les symboles individuels
+      for (final symbol in _visibleSymbols) {
+        _symbolData.remove(symbol.id);
+        await _mapController.removeSymbol(symbol);
+      }
+      _visibleSymbols.clear();
+
+      // Supprimer les symboles de cluster
+      for (final symbol in _clusterSymbols) {
+        _symbolData.remove(symbol.id);
+        await _mapController.removeSymbol(symbol);
+      }
+      _clusterSymbols.clear();
+    } catch (e) {
+      debugPrint('Error clearing markers: $e');
+    }
+  }
+
+  Future<List<Toilet>> getToiletsInCluster(Symbol clusterSymbol) async {
+    final data = _symbolData[clusterSymbol.id];
+    if (data != null && data['cluster'] != null) {
+      final cluster = data['cluster'] as MarkerCluster;
+      return cluster.toilets;
+    }
+    return [];
+  }
+
+  Toilet? getToiletFromSymbol(Symbol symbol) {
+    final data = _symbolData[symbol.id];
+    if (data != null && data['toilet'] != null) {
+      return data['toilet'] as Toilet;
+    }
+    return null;
+  }
+
+  bool isClusterSymbol(Symbol symbol) {
+    final data = _symbolData[symbol.id];
+    return data != null && data['cluster'] != null;
+  }
+
+  void dispose() {
+    _debounceTimer?.cancel();
+    _clearAllMarkers();
+  }
+}
