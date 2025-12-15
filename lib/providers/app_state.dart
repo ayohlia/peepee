@@ -17,6 +17,7 @@ class AppState with ChangeNotifier {
   String? _errorMessage;
   StreamSubscription<Position>? _positionStreamSubscription;
   StreamSubscription<bool>? _connectivitySubscription;
+  Timer? _gpsCheckTimer;
   bool _isFetchingToilets = false;
 
   final LocationService _locationService = getIt<LocationService>();
@@ -32,6 +33,7 @@ class AppState with ChangeNotifier {
   void dispose() {
     stopLocationUpdates();
     _connectivitySubscription?.cancel();
+    _gpsCheckTimer?.cancel();
     super.dispose();
   }
 
@@ -56,12 +58,15 @@ class AppState with ChangeNotifier {
         }
         _errorMessage = 'Impossible de suivre la position.';
         notifyListeners();
+        _startGpsCheckTimer();
       }).listen((Position position) {
         if (kDebugMode) {
           print(
               'Nouvelle position: ${position.latitude}, ${position.longitude}');
         }
         _currentLocation = position;
+        _clearError();
+        _gpsCheckTimer?.cancel();
         notifyListeners();
       });
     } catch (e) {
@@ -70,7 +75,25 @@ class AppState with ChangeNotifier {
       }
       _errorMessage = 'Impossible de démarrer le suivi de la position.';
       notifyListeners();
+      _startGpsCheckTimer();
     }
+  }
+
+  void _startGpsCheckTimer() {
+    _gpsCheckTimer?.cancel();
+    _gpsCheckTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
+      try {
+        final position = await _locationService.getCurrentLocation();
+        _currentLocation = position;
+        _clearError();
+        _gpsCheckTimer?.cancel();
+        startLocationUpdates();
+      } catch (e) {
+        if (kDebugMode) {
+          print('GPS still unavailable: $e');
+        }
+      }
+    });
   }
 
   void startConnectivityUpdates() {
@@ -86,7 +109,6 @@ class AppState with ChangeNotifier {
       }
 
       _clearError();
-      notifyListeners();
       updateNearbyToilets();
     });
   }

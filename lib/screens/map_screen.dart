@@ -384,15 +384,15 @@ class _MapScreenState extends State<MapScreen> {
             Positioned(
               left: 12,
               right: 12,
-              bottom: 12,
+              top: 12,
               child: Material(
                 color: Colors.transparent,
                 child: Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.75),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     appState.errorMessage!,
