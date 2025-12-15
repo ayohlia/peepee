@@ -8,18 +8,22 @@ class ToiletsService {
   final Dio _dio;
   static const String _overpassApiUrl =
       'https://overpass-api.de/api/interpreter';
-  static const int _radiusMeters = 5000;
+  static const int _radiusMeters = 50000;
 
   ToiletsService({Dio? dio}) : _dio = dio ?? Dio();
 
   Future<List<Toilet>> getNearbyToilets(double lat, double lon) async {
     try {
+      final query =
+          '[out:json];node[amenity=toilets](around:$_radiusMeters,$lat,$lon);out;';
+      if (kDebugMode) {
+        print('Requête Overpass: $query');
+        print('Rayon: $_radiusMeters mètres');
+      }
+
       final response = await _dio.get(
         _overpassApiUrl,
-        queryParameters: {
-          'data':
-              '[out:json];node[amenity=toilets](around:$_radiusMeters,$lat,$lon);out;'
-        },
+        queryParameters: {'data': query},
       );
 
       if (response.data == null || response.data['elements'] is! List) {
@@ -27,6 +31,10 @@ class ToiletsService {
       }
 
       final List<dynamic> elements = response.data['elements'];
+
+      if (kDebugMode) {
+        print('Nombre de toilettes trouvées: ${elements.length}');
+      }
 
       final List<Toilet> toilets =
           elements.map((e) => Toilet.fromOverpassJson(e)).toList();

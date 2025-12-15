@@ -31,7 +31,7 @@ class AppTheme {
                 lightColorScheme.brightness == Brightness.dark
                     ? Brightness.dark
                     : Brightness.light,
-            statusBarColor: lightColorScheme.onPrimaryContainer,
+            statusBarColor: AppColors.statusBarCyan,
             systemNavigationBarColor: lightColorScheme.onPrimaryContainer)),
   );
 }

@@ -9,6 +9,7 @@ import '../models/toilet_model.dart';
 import '../services/connectivity_service.dart';
 import '../services/location_service.dart';
 import '../services/toilets_service.dart';
+import '../utils/toilet_fetch_helper.dart';
 
 class AppState with ChangeNotifier {
   Position? _currentLocation;
@@ -147,10 +148,15 @@ class AppState with ChangeNotifier {
       try {
         _isFetchingToilets = true;
         _clearError();
-        _nearbyToilets = await _toiletsService.getNearbyToilets(
+
+        // Exécuter le traitement dans un isolate pour éviter de bloquer le thread principal
+        final toilets = await compute(fetchToiletsInBackground, [
           _currentLocation!.latitude,
           _currentLocation!.longitude,
-        );
+          _toiletsService
+        ]);
+
+        _nearbyToilets = toilets;
         notifyListeners();
       } on AppException catch (e) {
         _errorMessage = e.message;
