@@ -273,7 +273,7 @@ class MarkerManagerService {
             geometry: LatLng(toilet.latitude, toilet.longitude),
             iconImage: isSelected ? 'toilet-pin-selected' : 'toilet-pin',
             iconSize:
-                isSelected ? 0.7 : 0.5, // Augmenter la taille si sélectionné
+                isSelected ? 0.6 : 0.5, // Augmenter la taille si sélectionné
             iconAnchor: 'bottom',
           ),
         );
@@ -332,7 +332,7 @@ class MarkerManagerService {
             newSymbol,
             const SymbolOptions(
                 iconImage: 'toilet-pin-selected',
-                iconSize: 0.7,
+                iconSize: 0.6,
                 iconAnchor: 'bottom'),
           );
           debugPrint(
