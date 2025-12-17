@@ -33,13 +33,17 @@ class MarkerCluster {
 
 class MarkerManagerService {
   static const double _clusterRadius = 0.002; // ~200m
-  static const int _maxMarkersPerBatch = 50;
+  static const int _maxMarkersPerBatch = 100;
   static const int _maxMarkersVisible = 500; // Augmenté de 200 à 500
 
   final MapLibreMapController _mapController;
   final List<Symbol> _visibleSymbols = [];
   final List<Symbol> _clusterSymbols = [];
   final Map<String, dynamic> _symbolData = {}; // Stockage externe des données
+
+  // Optimisation: Table de recherche directe pour les symboles par ID de toilette
+  final Map<String, Symbol> _toiletIdToSymbol = {};
+  String? _previouslySelectedToiletId;
 
   Timer? _debounceTimer;
   bool _isLoading = false;
@@ -58,9 +62,12 @@ class MarkerManagerService {
   set selectedToiletId(String? id) {
     if (_selectedToiletId != id) {
       _selectedToiletId = id;
-      // Forcer la mise à jour des marqueurs pour refléter la sélection
-      _updateSelectedMarker();
     }
+  }
+
+  // Méthode publique pour mettre à jour le marqueur sélectionné
+  Future<void> updateSelectedMarker() async {
+    await _updateSelectedMarker();
   }
 
   Future<void> updateMarkers({
@@ -75,7 +82,7 @@ class MarkerManagerService {
     try {
       // Debounce les mises à jour rapides
       _debounceTimer?.cancel();
-      _debounceTimer = Timer(const Duration(milliseconds: 300), () async {
+      _debounceTimer = Timer(const Duration(milliseconds: 150), () async {
         await _performMarkerUpdate(allToilets, visibleBounds, zoomLevel);
       });
     } finally {
@@ -111,12 +118,14 @@ class MarkerManagerService {
       print('Total toilets available: ${toilets.length}');
     }
 
-    // Retourner TOUS les pins sans filtrage géographique
-    // Les toilettes sont déjà filtrées par rayon de 50km dans le service
+    final visibleToilets = toilets.where((toilet) {
+      return bounds.contains(LatLng(toilet.latitude, toilet.longitude));
+    }).toList();
+
     if (kDebugMode) {
-      print('Showing all toilets without geographic filtering');
+      print('Filtered to ${visibleToilets.length} visible toilets.');
     }
-    return toilets;
+    return visibleToilets;
   }
 
   Future<void> _showClusteredMarkers(List<Toilet> toilets) async {
@@ -263,13 +272,15 @@ class MarkerManagerService {
           SymbolOptions(
             geometry: LatLng(toilet.latitude, toilet.longitude),
             iconImage: isSelected ? 'toilet-pin-selected' : 'toilet-pin',
-            iconSize: 0.5,
+            iconSize:
+                isSelected ? 0.7 : 0.5, // Augmenter la taille si sélectionné
             iconAnchor: 'bottom',
           ),
         );
 
-        // Stocker les données dans notre Map externe
+        // Stocker les données dans nos Maps externes
         _symbolData[symbol.id] = {'toilet': toilet};
+        _toiletIdToSymbol[toilet.id.toString()] = symbol;
         _visibleSymbols.add(symbol);
       } catch (e) {
         debugPrint('Error creating individual symbol: $e');
@@ -283,27 +294,59 @@ class MarkerManagerService {
   }
 
   Future<void> _updateSelectedMarker() async {
-    // Mettre à jour uniquement l'icône du marqueur sélectionné
-    for (final symbol in _visibleSymbols) {
-      final data = _symbolData[symbol.id];
-      if (data != null && data['toilet'] != null) {
-        final toilet = data['toilet'] as Toilet;
-        final isSelected = _isToiletSelected(toilet);
+    debugPrint('=== _updateSelectedMarker (Optimized) START ===');
+    debugPrint(
+        'Selected: $_selectedToiletId, Previously Selected: $_previouslySelectedToiletId');
 
+    // Rien à faire si la sélection n'a pas changé
+    if (_selectedToiletId == _previouslySelectedToiletId) {
+      debugPrint('No change in selection.');
+      debugPrint('=== _updateSelectedMarker (Optimized) END ===');
+      return;
+    }
+
+    // Mettre à jour le symbole précédemment sélectionné à son état normal
+    if (_previouslySelectedToiletId != null) {
+      final previousSymbol = _toiletIdToSymbol[_previouslySelectedToiletId];
+      if (previousSymbol != null) {
         try {
           await _mapController.updateSymbol(
-            symbol,
-            SymbolOptions(
-              iconImage: isSelected ? 'toilet-pin-selected' : 'toilet-pin',
-              iconSize: 0.5,
-              iconAnchor: 'bottom',
-            ),
+            previousSymbol,
+            const SymbolOptions(
+                iconImage: 'toilet-pin', iconSize: 0.5, iconAnchor: 'bottom'),
           );
+          debugPrint(
+              'Updated previous symbol $_previouslySelectedToiletId to normal state.');
         } catch (e) {
-          debugPrint('Error updating symbol: $e');
+          debugPrint('Error updating previous symbol: $e');
         }
       }
     }
+
+    // Mettre à jour le nouveau symbole à son état sélectionné
+    if (_selectedToiletId != null) {
+      final newSymbol = _toiletIdToSymbol[_selectedToiletId];
+      if (newSymbol != null) {
+        try {
+          await _mapController.updateSymbol(
+            newSymbol,
+            const SymbolOptions(
+                iconImage: 'toilet-pin-selected',
+                iconSize: 0.7,
+                iconAnchor: 'bottom'),
+          );
+          debugPrint(
+              'Updated new symbol $_selectedToiletId to selected state.');
+        } catch (e) {
+          debugPrint('Error updating new symbol: $e');
+        }
+      }
+    }
+
+    // Mettre à jour la variable de suivi pour le prochain cycle
+    _previouslySelectedToiletId = _selectedToiletId;
+
+    debugPrint('=== _updateSelectedMarker (Optimized) END ===');
   }
 
   Future<void> _clearAllMarkers() async {
@@ -314,6 +357,7 @@ class MarkerManagerService {
         await _mapController.removeSymbol(symbol);
       }
       _visibleSymbols.clear();
+      _toiletIdToSymbol.clear();
 
       // Supprimer les symboles de cluster
       for (final symbol in _clusterSymbols) {

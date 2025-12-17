@@ -107,10 +107,6 @@ class LazyToiletsService {
       _cache.remove(key);
       _cacheTimestamps.remove(key);
     }
-
-    if (kDebugMode && expiredKeys.isNotEmpty) {
-      print('Cleaned ${expiredKeys.length} expired cache entries');
-    }
   }
 
   /// Récupère les toilettes avec système de retry

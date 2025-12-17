@@ -8,7 +8,7 @@ class ToiletsService {
   final Dio _dio;
   static const String _overpassApiUrl =
       'https://overpass-api.de/api/interpreter';
-  static const int _radiusMeters = 50000;
+  static const int _radiusMeters = 20000;
 
   ToiletsService({Dio? dio}) : _dio = dio ?? Dio();
 

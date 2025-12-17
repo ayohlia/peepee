@@ -29,6 +29,9 @@ dependencies:
   # Networking
   dio: ^5.9.0
 
+  # Clustering
+  fluster: ^1.2.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -61,6 +64,7 @@ flutter:
 
   assets:
     - assets/images/toiletPin.png
+    - assets/images/toiletPinSelected.png
     - assets/images/urgentPin.png
 
   fonts:
