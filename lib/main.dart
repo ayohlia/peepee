@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:peepee/screens/map_screen.dart';
+
 import 'package:provider/provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
-
+import 'package:peepee/views/map_view.dart';
 import 'assets/app_colors.dart';
 import 'assets/app_theme.dart';
 import 'providers/app_state.dart';
@@ -42,7 +42,7 @@ class PeePee extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Toilettes Publiques App',
       theme: AppTheme.lightTheme,
-      home: const MapScreen(title: 'PeePee'),
+      home: const MapView(title: 'PeePee'),
     );
   }
 }

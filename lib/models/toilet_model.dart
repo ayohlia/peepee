@@ -1,8 +1,7 @@
-import 'package:flutter/foundation.dart';
+import 'package:maplibre_gl/maplibre_gl.dart';
 
-@immutable
 class Toilet {
-  const Toilet({
+  Toilet({
     required this.id,
     required this.latitude,
     required this.longitude,
@@ -13,8 +12,8 @@ class Toilet {
   });
 
   final int id;
-  final double latitude;
-  final double longitude;
+  final double? latitude;
+  final double? longitude;
   final String? name;
   final String? openingHours;
   final String? fee;
@@ -22,7 +21,7 @@ class Toilet {
 
   factory Toilet.fromOverpassJson(Map<String, dynamic> json) {
     final tags = json['tags'] as Map<String, dynamic>? ?? {};
-    
+
     bool? wheelchair;
     if (tags['wheelchair'] == 'yes') {
       wheelchair = true;
@@ -32,8 +31,8 @@ class Toilet {
 
     return Toilet(
       id: json['id'],
-      latitude: json['lat'],
-      longitude: json['lon'],
+      latitude: json['lat']?.toDouble(),
+      longitude: json['lon']?.toDouble(),
       name: tags['name'],
       openingHours: tags['opening_hours'],
       fee: tags['fee'],
@@ -41,12 +40,19 @@ class Toilet {
     );
   }
 
+  Symbol toSymbol() {
+    return Symbol(
+      id.toString(),
+      SymbolOptions(
+        geometry: LatLng(latitude!, longitude!),
+      ),
+    );
+  }
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is Toilet &&
-          runtimeType == other.runtimeType &&
-          id == other.id;
+      other is Toilet && runtimeType == other.runtimeType && id == other.id;
 
   @override
   int get hashCode => id.hashCode;

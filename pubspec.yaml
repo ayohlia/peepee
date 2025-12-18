@@ -25,12 +25,10 @@ dependencies:
   connectivity_plus: ^7.0.0
   geolocator: ^14.0.2
   url_launcher: ^6.3.2
+  sensors_plus: ^6.0.1
   
   # Networking
   dio: ^5.9.0
-
-  # Clustering
-  fluster: ^1.2.0
 
 dev_dependencies:
   flutter_test:
