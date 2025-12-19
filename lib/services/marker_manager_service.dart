@@ -5,35 +5,35 @@ import '../models/toilet_model.dart';
 
 class MarkerManagerService {
   final MapLibreMapController _mapController;
-  final Map<String, Symbol> _symbols = {};
-  String? _selectedToiletId;
   static const String _toiletSourceId = 'toilet-source';
+  bool _isInitialized = false;
 
-  MarkerManagerService(this._mapController);
+  // Propriétés pour la sélection des toilettes
+  String? _selectedToiletId;
+  Function(String?)? onToiletSelected;
 
   set selectedToiletId(String? id) {
     if (_selectedToiletId != id) {
       _selectedToiletId = id;
+      // Mettre à jour le style du marqueur si nécessaire
     }
   }
 
-  Future<void> initializeToiletSource() async {
+  MarkerManagerService(this._mapController);
+
+  Future<void> initialize() async {
+    if (_isInitialized) return;
+
     try {
+      // Initialiser la source des toilettes
       await _mapController.addSource(
         _toiletSourceId,
         const GeojsonSourceProperties(
           data: {'type': 'FeatureCollection', 'features': []},
         ),
       );
-      debugPrint('Source toilettes initialisée');
-    } catch (e) {
-      debugPrint('Erreur initialisation source toilettes: $e');
-    }
-  }
 
-  Future<void> initializeToiletLayer() async {
-    try {
-      // Utiliser une seule couche pour éviter les conflits
+      // Ajouter la couche des toilettes
       await _mapController.addLayer(
         _toiletSourceId,
         'toilet-layer',
@@ -46,9 +46,11 @@ class MarkerManagerService {
         ),
       );
 
-      debugPrint('Couche toilettes initialisée avec succès');
+      _isInitialized = true;
+      debugPrint('MarkerManagerService initialisé avec succès');
     } catch (e) {
-      debugPrint('Erreur initialisation couche toilettes: $e');
+      debugPrint('Erreur initialisation MarkerManagerService: $e');
+      rethrow;
     }
   }
 
@@ -57,56 +59,61 @@ class MarkerManagerService {
     required LatLngBounds visibleBounds,
     required double zoomLevel,
   }) async {
-    debugPrint(
-        'updateMarkers appelé avec ${allToilets.length} toilettes (TOUS SANS FILTRAGE)');
+    if (!_isInitialized) {
+      await initialize();
+    }
 
-    // Afficher TOUS les pins sans filtrage pour éviter le clustering
-    final toiletsToDisplay = allToilets
-        .where((toilet) => toilet.latitude != null && toilet.longitude != null)
+    // Filtrer uniquement les toilettes valides
+    final validToilets = allToilets
+        .where((t) => t.latitude != null && t.longitude != null)
         .toList();
 
-    debugPrint('Toilettes à afficher: ${toiletsToDisplay.length}');
-
-    if (toiletsToDisplay.isEmpty) {
-      debugPrint('Aucune toilette à afficher - retour');
+    if (validToilets.isEmpty) {
+      await _clearMarkers();
       return;
     }
 
-    // Convertir en GeoJSON pour la source
-    final features = toiletsToDisplay
-        .map((toilet) => {
-              'type': 'Feature',
-              'id': toilet.id,
-              'geometry': {
-                'type': 'Point',
-                'coordinates': [toilet.longitude, toilet.latitude]
-              },
-              'properties': {
-                'isSelected': _isToiletSelected(toilet),
-              }
-            })
-        .toList();
-
-    final geojson = {
-      'type': 'FeatureCollection',
-      'features': features,
-    };
-
-    debugPrint('GeoJSON créé avec ${features.length} features');
+    // Convertir en GeoJSON
+    final features = validToilets.map(_toGeoJsonFeature).toList();
 
     try {
-      await _mapController.setGeoJsonSource(_toiletSourceId, geojson);
-      debugPrint('Source toilettes mise à jour avec succès');
+      await _mapController.setGeoJsonSource(
+        _toiletSourceId,
+        {'type': 'FeatureCollection', 'features': features},
+      );
+      debugPrint('${features.length} marqueurs de toilettes mis à jour');
     } catch (e) {
-      debugPrint('Erreur mise à jour source toilettes: $e');
+      debugPrint('Erreur mise à jour des marqueurs: $e');
     }
   }
 
-  bool _isToiletSelected(Toilet toilet) {
-    return _selectedToiletId == toilet.id.toString();
+  Map<String, dynamic> _toGeoJsonFeature(Toilet toilet) {
+    return {
+      'type': 'Feature',
+      'id': toilet.id,
+      'geometry': {
+        'type': 'Point',
+        'coordinates': [toilet.longitude, toilet.latitude]
+      },
+      'properties': {
+        'name': toilet.name ?? 'Toilettes publiques',
+        'wheelchair': toilet.isWheelchairAccessible == true ? 'yes' : 'no',
+      }
+    };
+  }
+
+  Future<void> _clearMarkers() async {
+    try {
+      await _mapController.setGeoJsonSource(
+        _toiletSourceId,
+        {'type': 'FeatureCollection', 'features': []},
+      );
+    } catch (e) {
+      debugPrint('Erreur vidage des marqueurs: $e');
+    }
   }
 
   void dispose() {
-    _symbols.clear();
+    // Nettoyage si nécessaire
   }
 }

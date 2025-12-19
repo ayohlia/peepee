@@ -33,6 +33,7 @@ class _MapViewState extends State<MapView> {
   bool _isUpdatingSources = false;
   bool _sourcesAdded = false;
   double _currentZoom = 15.0;
+  String? _selectedToiletId; // Pour suivre la toilette sélectionnée
 
   MarkerManagerService? _markerManager;
   Timer? _mapUpdateDebounce;
@@ -73,8 +74,20 @@ class _MapViewState extends State<MapView> {
     if (_styleLoaded && _sourcesAdded) {
       final appState = Provider.of<AppState>(context, listen: false);
 
+      void _onToiletSelected(String? toiletId) {
+        if (_selectedToiletId != toiletId) {
+          setState(() {
+            _selectedToiletId = toiletId;
+          });
+          // Notifier le parent si nécessaire
+          final appState = Provider.of<AppState>(context, listen: false);
+          appState.selectToilet(toiletId);
+        }
+      }
+
       if (_markerManager != null) {
-        _markerManager!.selectedToiletId = appState.selectedToiletId;
+        _markerManager!.selectedToiletId = _selectedToiletId;
+        _markerManager!.onToiletSelected = _onToiletSelected;
       }
 
       // Optimized camera update with debouncing
@@ -216,9 +229,10 @@ class _MapViewState extends State<MapView> {
     );
   }
 
-  void _onMapCreated(MapLibreMapController controller) {
+  Future<void> _onMapCreated(MapLibreMapController controller) async {
     _mapController = controller;
     _markerManager = MarkerManagerService(controller);
+    await _markerManager?.initialize();
   }
 
   Future<void> _onStyleLoaded() async {
@@ -227,9 +241,6 @@ class _MapViewState extends State<MapView> {
     await _addImages();
     if (!_sourcesAdded) {
       await _initializeMapSources();
-      // Initialiser la source et la couche des toilettes
-      await _markerManager?.initializeToiletSource();
-      await _markerManager?.initializeToiletLayer();
       _sourcesAdded = true;
     }
     _onAppStateUpdated();
